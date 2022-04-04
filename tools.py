@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 
-import database as db
 import ibm_db
 import tkinter as tk
 from tkinter import ttk, simpledialog
 
+# --------------------------------------------------------------------------------
+# VERSION 1 by Manfred Wagner
 # --------------------------------------------------------------------------------
 # Class: Db
 # Interface to the database
@@ -160,23 +161,25 @@ class Db():
                        -DIM   Dimension
                        -REG   Regular Index
         """
-        index_struct:dict = {}
-        sql = """SELECT indschema,indname,colnames,uniquerule,indextype,reverse_scans 
-                 FROM syscat.indexes
-                 WHERE tabschema = '"""+schema+"""'
-                 AND tabname = '"""+name+"""'"""
+        index_struct:list = []
+        sql = """SELECT idx.tabschema,idx.tabname,idx.indschema,idx.indname,idx.uniquerule,idx.indextype,idc.colname,idc.colorder,idx.reverse_scans
+                FROM syscat.indexes as idx JOIN syscat.indexcoluse as idc ON (idx.indschema,idx.indname) = (idc.indschema,idc.indname)
+                WHERE idx.tabschema = '"""+schema+"""' AND idx.tabname = '"""+name+"""'
+                ORDER BY idx.tabschema,idx.tabname,idx.indname,idc.colseq"""
         cursor = ibm_db.exec_immediate(db,sql)
         row = ibm_db.fetch_assoc(cursor)
-        sequence = 1
         while row != False:
-            index_struct[sequence] = {}
-            index_struct[sequence]['INDSCHEMA'] = row['INDSCHEMA']
-            index_struct[sequence]['INDNAME'] = row['INDNAME']
-            index_struct[sequence]['COLNAMES'] = row['COLNAMES']
-            index_struct[sequence]['UNIQUERULE'] = row['UNIQUERULE']
-            index_struct[sequence]['INDEXTYPE'] = row['INDEXTYPE']
-            index_struct[sequence]['REVERSE_SCANS'] = row['REVERSE_SCANS']
-            sequence += 1
+            tmp:dict = {}
+            tmp["TABSCHEMA"] = row["TABSCHEMA"].strip()
+            tmp["TABNAME"] = row["TABNAME"].strip()
+            tmp["INDSCHEMA"] = row["INDSCHEMA"].strip()
+            tmp["INDNAME"] = row["INDNAME"].strip()
+            tmp["UNIQUERULE"] = row["UNIQUERULE"].strip()
+            tmp["INDEXTYPE"] = row["INDEXTYPE"].strip()
+            tmp["COLNAME"] = row["COLNAME"].strip()
+            tmp["COLORDER"] = row["COLORDER"].strip()
+            tmp["REVERSE_SCANS"] = row["REVERSE_SCANS"].strip()
+            index_struct.append(tmp)
             row = ibm_db.fetch_assoc(cursor)
         return index_struct
     
@@ -350,13 +353,16 @@ class Compare():
 
     def __init__(self):
         self.db = Db()
+        self.source_database = ""
         self.cmd_list:list = []
+        self.idx_list:list = []
         self.period:dict = {'SYSTEM':{'STATUS':'N', 'VON':'', 'BIS':'', 'TS':''}, 'BUSINESS':{'STATUS':'N', 'VON':'', 'BIS':''}}
         self.history:dict = {'SOURCE':'', 'TARGET':''}
         pass
     
     """ Main-Routine to compare tables """
     def execute(self,src_db,src_schema,src_table,trg_db,trg_schema,trg_table):
+        self.source_database = src_db
         self.source_schema = src_schema
         if src_table == '*':
             """ Every table in the whole schema has to be checked """
@@ -368,14 +374,19 @@ class Compare():
                 if 'TH_' not in _table and 'V_' not in _table:
                     print(f"Table: {_table}")
                     src_table_struct = self.db.get_table_struct(src_db,src_schema,_table)
+                    src_index_struct = self.db.get_index_struct(src_db,src_schema,_table)
                     self.check_hist_table('SOURCE',src_table_struct)
                     trg_status = self.db.check_table(trg_db,trg_schema,_table)
                     if trg_status:
                         # if the target table exists ( ALTER TABLE )
                         trg_table_struct = self.db.get_table_struct(trg_db,trg_schema,_table)
+                        trg_index_struct = self.db.get_index_struct(trg_db,trg_schema,_table)
                         self.check_hist_table('TARGET',trg_table_struct)
                         self.alter_table(src_table_struct,trg_table_struct)
                         self.check_period(src_table_struct,trg_table_struct)
+                        src_index_struct = self.index_rebuild(src_index_struct)
+                        trg_index_struct = self.index_rebuild(trg_index_struct)
+                        self.check_index(src_index_struct,trg_index_struct)
                         self.print_cmd(trg_schema,_table)
                     else:
                         # if the target table does not exist ( CREATE TABLE )
@@ -387,13 +398,19 @@ class Compare():
             if src_status:
                 # If the sourcetable exist
                 src_table_struct = self.db.get_table_struct(src_db,src_schema,src_table)
+                src_index_struct = self.db.get_index_struct(src_db,src_schema,src_table)
                 self.check_hist_table('SOURCE',src_table_struct)
                 trg_status = self.db.check_table(trg_db,trg_schema,trg_table)
                 if trg_status:
                     # if the target table exists ( ALTER TABLE )
                     trg_table_struct = self.db.get_table_struct(trg_db,trg_schema,trg_table)
+                    trg_index_struct = self.db.get_index_struct(trg_db,trg_schema,trg_table)
                     self.check_hist_table('TARGET',trg_table_struct)
                     self.alter_table(src_table_struct,trg_table_struct)
+                    self.check_period(src_table_struct,trg_table_struct)
+                    src_index_struct = self.index_rebuild(src_index_struct)
+                    trg_index_struct = self.index_rebuild(trg_index_struct)
+                    self.check_index(src_index_struct,trg_index_struct)
                     self.print_cmd(trg_schema,trg_table)
                 else:
                     # if the target table does not exist ( CREATE TABLE )
@@ -415,9 +432,73 @@ class Compare():
                 # COLUMN doesn't exist ( Add COLUMN )
                 self.add_column(src_feld,source.field_dict[src_feld],target.table_info['TABSCHEMA'],
                     target.table_info['TABNAME'])
-        #self.check_period(src_feld)
-        #self.print_cmd(target.table_info['TABSCHEMA'],target.table_info['TABNAME'])
         pass
+
+    # Erstellt aus den Feldern der Indexe eine Liste 
+    def index_reduce(self,index):
+        tmp:list = []
+        for _ in index:
+            tmp.append(_['column'])
+        return tmp
+
+    # Vergleicht die Indexe
+    def check_index(self,left_index, right_index):
+        # Alle Target-Indexe mit den Source-Indexen vergleichen
+        for i_r in right_index:
+            if i_r['column'] not in self.index_reduce(left_index):
+                self.drop_idx(i_r)
+        # Alle Source-Indexe mit den Target-Indexen vergleichen
+        for i_l in left_index:
+            if i_l['column'] not in self.index_reduce(right_index):
+                self.build_idx(i_l,right_index)
+    
+    def index_rebuild(self,idx_records):
+        index_list:list = []
+        index:dict = {'table':'','index':'','rule':'','type':'','column':[],'order':[]}
+        for idx_line in idx_records:
+            if index['index'] != idx_line['INDSCHEMA']+'.'+idx_line['INDNAME']:
+                if index['index'] != '':
+                    index_list.append(index)
+                index:dict = {'table':'','index':'','rule':'','type':'','column':[],'order':[]}
+                index['table'] = idx_line['TABSCHEMA']+'.'+idx_line['TABNAME']
+                index['index'] = idx_line['INDSCHEMA']+'.'+idx_line['INDNAME']
+                index['rule'] = idx_line['UNIQUERULE']
+                index['type'] = idx_line['INDEXTYPE']
+                index['column'].append(idx_line['COLNAME'])
+                index['order'].append(idx_line['COLORDER'])
+            else:
+                index['column'].append(idx_line['COLNAME'])
+                index['order'].append(idx_line['COLORDER'])
+        index_list.append(index)
+        return index_list
+
+    def build_idx(self,left_idx,right_idx):
+        tmp_idx:dict = {'schema':'', 'table':''}
+        for _ in right_idx:
+            tmp_idx['schema'] = _['table'].split('.')[0]
+            tmp_idx['table'] = _['table'].split('.')[1]
+        left_idx['table'] = tmp_idx['schema']+'.'+tmp_idx['table']
+        left_idx['index'] = tmp_idx['schema']+'.'+left_idx['index'].split('.')[1]
+        text:str = ""
+        if left_idx['rule'] == 'U':
+            text += 'CREATE UNIQUE INDEX '+left_idx['index']
+            text += ' ON '+left_idx['table']+' ('+','.join(left_idx['column'])
+            text += ')'
+        if left_idx['rule'] == 'P':
+            text += 'ALTER TABLE '+left_idx['table']
+            text += ' ADD CONSTRAINT '+left_idx['index'].split('.')[1]
+            text += ' PRIMARY KEY ('+','.join(left_idx['column'])
+            text += ')'
+        if left_idx['type'] == 'CLUST':
+            text += ' CLUSTER'
+        text += ';'
+        self.idx_list.append(text)
+
+    def drop_idx(self,right_idx):
+        if right_idx['index'] != '':
+            text:str = ""
+            text += 'DROP INDEX '+right_idx['index']+';'
+            self.idx_list.append(text)
 
     # Check ATTRIBUTES ( ALTER COLUMN )
     def alter_column(self,src_feld,src_attribute,trg_schema,trg_table,trg_attribute):
@@ -523,6 +604,14 @@ class Compare():
         self.check_hist_table('TARGET',{'COLNAME':{'DUMMY':{'HISTORYTABNAME':''}}})
         self.check_period(struct,{'TEMPORALTYPE':'N'})
 
+        src_index_struct = self.db.get_index_struct(self.source_database,struct['TABSCHEMA'],struct['TABNAME'])
+        src_index_struct = self.index_rebuild(src_index_struct)
+        trg_index:dict = {'table':'','index':'', 'rule':'', 'type':'', 'column':[], 'order':[]}
+        trg_index['table'] = schema +'.'+ table
+        trg_index_struct:list = []
+        trg_index_struct.append(trg_index)
+        self.check_index(src_index_struct,trg_index_struct)
+
         self.print_cmd(schema,table)
         pass
 
@@ -557,28 +646,28 @@ class Compare():
             'B' 'N' = ADD  BUSINESS_TIME, ADD  SYSTEM_TIME
         """
         if source['TEMPORALTYPE'] ==   'N' and target['TEMPORALTYPE'] == 'A':
-            print("DROP BUSINESS_TIME")
+            #print("DROP BUSINESS_TIME")
             self.period['BUSINESS']['STATUS'] = 'D'
         if source['TEMPORALTYPE'] == 'S' and target['TEMPORALTYPE'] == 'B':
-            print("DROP BUSINESS_TIME")
+            #print("DROP BUSINESS_TIME")
             self.period['BUSINESS']['STATUS'] = 'D'
         if source['TEMPORALTYPE'] == 'N' and target['TEMPORALTYPE'] == 'S':
-            print("DROP SYSTEM_TIME")
+            #print("DROP SYSTEM_TIME")
             self.period['SYSTEM']['STATUS'] = 'D'
         if source['TEMPORALTYPE'] == 'A' and target['TEMPORALTYPE'] == 'B':
-            print("DROP SYSTEM_TIME")
+            #print("DROP SYSTEM_TIME")
             self.period['SYSTEM']['STATUS'] = 'D'
         if source['TEMPORALTYPE'] == 'N' and target['TEMPORALTYPE'] == 'B':
-            print("DROP SYSTEM_TIME, DROP BUSINESS_TIME")
+            #print("DROP SYSTEM_TIME, DROP BUSINESS_TIME")
             self.period['SYSTEM']['STATUS'] = 'D'
             self.period['BUSINESS']['STATUS'] = 'D'
         #            
         if source['TEMPORALTYPE'] == 'A' and target['TEMPORALTYPE'] == 'N':
-            print("ADD BUSINESS_TIME")
+            #print("ADD BUSINESS_TIME")
             self.period['BUSINESS']['STATUS'] = 'A'
             self.check_period_fields('B',source['COLNAME'])
         if source['TEMPORALTYPE'] == 'B' and target['TEMPORALTYPE'] == 'S':
-            print("ADD BUSINESS_TIME")
+            #print("ADD BUSINESS_TIME")
             self.period['BUSINESS']['STATUS'] = 'A'
             self.check_period_fields('B',source['COLNAME'])
         if source['TEMPORALTYPE'] == 'S' and target['TEMPORALTYPE'] == 'N':
@@ -625,19 +714,26 @@ class Compare():
             print(f"CALL SYSPROC.ADMIN_CMD('REORG TABLE {schema}.{table}');")
         print("          ")
         if self.period['SYSTEM']['STATUS'] == 'A':
-            print(f" ALTER TABLE {schema}.{table} ADD PERIOD SYSTEM_TIME ({self.period['SYSTEM']['VON']},{self.period['SYSTEM']['BIS']});")
+            print(f"ALTER TABLE {schema}.{table} ADD PERIOD SYSTEM_TIME ({self.period['SYSTEM']['VON']},{self.period['SYSTEM']['BIS']});")
         if self.period['SYSTEM']['STATUS'] == 'D':
-            print(f" ALTER TABLE {schema}.{table} DROP PERIOD SYSTEM_TIME;")
+            print(f"ALTER TABLE {schema}.{table} DROP PERIOD SYSTEM_TIME;")
         if self.period['BUSINESS']['STATUS'] == 'A':
-            print(f" ALTER TABLE {schema}.{table} ADD PERIOD BUSINESS_TIME ({self.period['BUSINESS']['VON']},{self.period['BUSINESS']['BIS']});")
+            print(f"ALTER TABLE {schema}.{table} ADD PERIOD BUSINESS_TIME ({self.period['BUSINESS']['VON']},{self.period['BUSINESS']['BIS']});")
         if self.period['BUSINESS']['STATUS'] == 'D':
-            print(f" ALTER TABLE {schema}.{table} DROP PERIOD BUSINESS_TIME;")
+            print(f"ALTER TABLE {schema}.{table} DROP PERIOD BUSINESS_TIME;")
+        if self.period['SYSTEM']['STATUS'] in ['A','D'] or self.period['BUSINESS']['STATUS'] in ['A','D']:
+            print(f"CALL SYSPROC.ADMIN_CMD('REORG TABLE {schema}.{table}');")
         print("          ")
         if self.history['SOURCE']:
             if not self.history['TARGET']:
                 print(f"CREATE TABLE {schema}.{self.history['SOURCE']} LIKE {schema}.{table};")
                 print(f"ALTER TABLE {schema}.{table} ADD VERSIONING USE HISTORY TABLE {schema}.{self.history['SOURCE']};")
+                print(f"CALL SYSPROC.ADMIN_CMD('REORG TABLE {schema}.{table}');")
+        print("          ")
+        for idx in self.idx_list:
+            print(idx)
         print("--------------------------------------------------------------------------------")
+        self.idx_list:list = []
         self.cmd_list:list = []
         self.history = {'SOURCE':'', 'TARGET':''}
 

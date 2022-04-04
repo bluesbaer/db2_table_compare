@@ -3,6 +3,8 @@
 import tools
 
 # --------------------------------------------------------------------------------
+# VERSION 1 by Manfred Wagner
+# --------------------------------------------------------------------------------
 # BESCHREIBUNG:
 # Dieses Script dient als Vorlage und sollte vor Gebrauch umkopiert werden.
 # Nach dem das Script mit einem anderen Namen umkopiert wurde, kann das
