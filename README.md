@@ -23,12 +23,12 @@ src_con = src.connect('server',50000,'database','','','','conuser','sesuser')
 trg_con = trg.connect('server',50000,'database','','','','conuser','sesuser')
 ```
 In this area you should type in:   
-   the servername which contains the database (source or target) "could be the same"   
-   the port of the database on this server   
-   the database name   
-   three fields for ssl (if you don't use SSL you can leave it blank)   
-   the user to connect to the database   
-   the security-user (this is just needed if you use my db2-security-system)   
+  - the servername which contains the database (source or target) "could be the same"   
+  - the port of the database on this server   
+  - the database name   
+  - three fields for ssl (if you don't use SSL you can leave it blank)   
+  - the user to connect to the database   
+  - the security-user (this is just needed if you use my db2-security-system)   
    
 Area No.3:
 ```
