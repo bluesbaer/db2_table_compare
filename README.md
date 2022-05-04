@@ -6,8 +6,8 @@
 2. compare_sheet.py
    Worksheet for the table comparison
 
-**How To** \n
-The worksheet consists of three areas
+**How To**   
+The worksheet consists of three areas   
 Area No.1: 
 ```
 # Default-Werte: Nicht Ändern`
