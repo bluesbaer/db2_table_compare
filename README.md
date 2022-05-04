@@ -6,7 +6,7 @@
 2. compare_sheet.py
    Worksheet for the table comparison
 
-**How To**
+**How To** \n
 The worksheet consists of three areas
 Area No.1: 
 ```
