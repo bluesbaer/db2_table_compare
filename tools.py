@@ -474,25 +474,27 @@ class Compare():
 
     def build_idx(self,left_idx,right_idx):
         tmp_idx:dict = {'schema':'', 'table':''}
-        for _ in right_idx:
-            tmp_idx['schema'] = _['table'].split('.')[0]
-            tmp_idx['table'] = _['table'].split('.')[1]
-        left_idx['table'] = tmp_idx['schema']+'.'+tmp_idx['table']
-        left_idx['index'] = tmp_idx['schema']+'.'+left_idx['index'].split('.')[1]
-        text:str = ""
-        if left_idx['rule'] == 'U':
-            text += 'CREATE UNIQUE INDEX '+left_idx['index']
-            text += ' ON '+left_idx['table']+' ('+','.join(left_idx['column'])
-            text += ')'
-        if left_idx['rule'] == 'P':
-            text += 'ALTER TABLE '+left_idx['table']
-            text += ' ADD CONSTRAINT '+left_idx['index'].split('.')[1]
-            text += ' PRIMARY KEY ('+','.join(left_idx['column'])
-            text += ')'
-        if left_idx['type'] == 'CLUST':
-            text += ' CLUSTER'
-        text += ';'
-        self.idx_list.append(text)
+        if left_idx['table'] != "":
+            if right_idx[0]['table'] != "":
+                for _ in right_idx:
+                    tmp_idx['schema'] = _['table'].split('.')[0]
+                    tmp_idx['table'] = _['table'].split('.')[1]
+                left_idx['table'] = tmp_idx['schema']+'.'+tmp_idx['table']
+                left_idx['index'] = tmp_idx['schema']+'.'+left_idx['index'].split('.')[1]
+            text:str = ""
+            if left_idx['rule'] == 'U':
+                text += 'CREATE UNIQUE INDEX '+left_idx['index']
+                text += ' ON '+left_idx['table']+' ('+','.join(left_idx['column'])
+                text += ')'
+            if left_idx['rule'] == 'P':
+                text += 'ALTER TABLE '+left_idx['table']
+                text += ' ADD CONSTRAINT '+left_idx['index'].split('.')[1]
+                text += ' PRIMARY KEY ('+','.join(left_idx['column'])
+                text += ')'
+            if left_idx['type'] == 'CLUST':
+                text += ' CLUSTER'
+            text += ';'
+            self.idx_list.append(text)
 
     def drop_idx(self,right_idx):
         if right_idx['index'] != '':
@@ -721,8 +723,13 @@ class Compare():
             print(f"ALTER TABLE {schema}.{table} ADD PERIOD BUSINESS_TIME ({self.period['BUSINESS']['VON']},{self.period['BUSINESS']['BIS']});")
         if self.period['BUSINESS']['STATUS'] == 'D':
             print(f"ALTER TABLE {schema}.{table} DROP PERIOD BUSINESS_TIME;")
-        if self.period['SYSTEM']['STATUS'] in ['A','D'] or self.period['BUSINESS']['STATUS'] in ['A','D']:
+        # Clear the PERIOD-STATUS
+        if self.period['SYSTEM']['STATUS'] in ['A','D']:
             print(f"CALL SYSPROC.ADMIN_CMD('REORG TABLE {schema}.{table}');")
+            self.period['SYSTEM']['STATUS'] = ""
+        if self.period['BUSINESS']['STATUS'] in ['A','D']:
+            print(f"CALL SYSPROC.ADMIN_CMD('REORG TABLE {schema}.{table}');")
+            self.period['BUSINESS']['STATUS'] = ""
         print("          ")
         if self.history['SOURCE']:
             if not self.history['TARGET']:

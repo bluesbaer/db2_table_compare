@@ -9,6 +9,11 @@ import tools
 # Dieses Script dient als Vorlage und sollte vor Gebrauch umkopiert werden.
 # Nach dem das Script mit einem anderen Namen umkopiert wurde, kann das
 # kopierte Script geändert werden.
+#
+# SELECT 'line.execute(src_con,"'||strip(tabschema)||'","'||strip(tabname)||'",trg_con,"{targetSchema}","'||strip(tabname)||'")'
+# FROM syscat.tables
+# WHERE tabschema = {sourceschema}
+# AND tabname NOT LIKE 'TH%'
 # --------------------------------------------------------------------------------
 
 # --------------------------------------------------------------------------------
