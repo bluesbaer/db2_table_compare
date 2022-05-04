@@ -9,10 +9,12 @@
 **How To**
 The worksheet consists of three areas
 Area No.1: 
-`# Default-Werte: Nicht Ändern`
-`src = tools.Db()`
-`trg = tools.Db()`
-`line = tools.Compare()`
+{
+# Default-Werte: Nicht Ändern`
+src = tools.Db()
+trg = tools.Db()
+line = tools.Compare()
+}
 This area contains some default values and should not be changed.
 
 Area No.2:
