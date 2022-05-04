@@ -18,8 +18,10 @@ line = tools.Compare()
 This area contains some default values and should not be changed.
 
 Area No.2:
-`src_con = src.connect('server',50000,'database','','','','conuser','sesuser')`
-`trg_con = trg.connect('server',50000,'database','','','','conuser','sesuser')`
+```
+src_con = src.connect('server',50000,'database','','','','conuser','sesuser')
+trg_con = trg.connect('server',50000,'database','','','','conuser','sesuser')
+```
 In this area you should type in:
    the servername which contains the database (source or target) "could be the same"
    the port of the database on this server
@@ -29,7 +31,9 @@ In this area you should type in:
    the security-user (this is just needed if you use my db2-security-system)
    
 Area No.3:
-`line.execute(src_con,'source_schema','*',trg_con,'target_schema','*')`
+```
+line.execute(src_con,'source_schema','*',trg_con,'target_schema','*')
+```
 In this area you type in the source-schema, the source-table, the target-schema and the target-table
 
 **Execute**
