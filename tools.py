@@ -423,6 +423,12 @@ class Compare():
     def alter_table(self,src_struct,trg_struct):
         source = Table(src_struct)
         target = Table(trg_struct)
+        # Obsolete Fields (DROP)
+        for trg_feld in target.field_dict.keys():
+            if trg_feld not in source.field_dict.keys():
+                # COLUMN does not exists ( Check ATTRIBUTES )
+                self.drop_column(trg_feld,target.table_info['TABSCHEMA'],target.table_info['TABNAME'])
+        # Relevant Fields (ADD / ALTER)
         for src_feld in source.field_dict.keys():
             if src_feld in target.field_dict.keys():
                 # COLUMN exists ( Check ATTRIBUTES )
@@ -432,6 +438,7 @@ class Compare():
                 # COLUMN doesn't exist ( Add COLUMN )
                 self.add_column(src_feld,source.field_dict[src_feld],target.table_info['TABSCHEMA'],
                     target.table_info['TABNAME'])
+
         pass
 
     # Erstellt aus den Feldern der Indexe eine Liste 
@@ -501,6 +508,9 @@ class Compare():
             text:str = ""
             text += 'DROP INDEX '+right_idx['index']+';'
             self.idx_list.append(text)
+    
+    def drop_column(self,trg_feld,trg_schema,trg_table):
+        self.cmd_list.append(f"ALTER TABLE {trg_schema}.{trg_table} DROP COLUMN {trg_feld};")
 
     # Check ATTRIBUTES ( ALTER COLUMN )
     def alter_column(self,src_feld,src_attribute,trg_schema,trg_table,trg_attribute):
